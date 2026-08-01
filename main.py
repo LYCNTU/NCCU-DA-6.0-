@@ -35,7 +35,11 @@ def read_root():
     return {"status": "LINE Bot is running!"}
 
 @app.post("/callback")
-async def callback(request: Request, x_line_signature: str = Header(None)):
+async def callback(request: Request, x_line_signature: str = Header(None), x_line_retry_key: str = Header(None)):
+    # 💡 關鍵修正：如果是 LINE 的自動重試請求，直接忽略不處理，避免重複打爆 Gemini API
+    if x_line_retry_key:
+        return "OK"
+
     body = await request.body()
     body_str = body.decode('utf-8')
 
