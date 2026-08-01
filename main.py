@@ -27,7 +27,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 初始化 Gemini SDK
+# 顯式代入 API Key 初始化 Gemini SDK Client
 ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 @app.get("/")
@@ -36,7 +36,7 @@ def read_root():
 
 @app.post("/callback")
 async def callback(request: Request, x_line_signature: str = Header(None), x_line_retry_key: str = Header(None)):
-    # 💡 忽略 LINE 自動重試請求，避免重複觸發 API 限流
+    # 💡 忽略 LINE 自動重試請求，避免重複觸發處理
     if x_line_retry_key:
         return "OK"
 
@@ -179,12 +179,10 @@ def handle_text_message(event):
                 )
                 ai_reply = ai_response.text.strip()
             except APIError as e:
-                if e.code == 429:
-                    ai_reply = "☕ 目前請求較頻繁，AI 正在休息中！請稍微等待 1 分鐘後再試一次喔。"
-                else:
-                    ai_reply = f"🤖 AI 服務連線異常 (HTTP {e.code})，請稍後再試。"
+                # 顯式回傳具體 API 錯誤訊息，協助除錯
+                ai_reply = f"🤖 Gemini API 發生錯誤 (HTTP {e.code})：{e.message}"
             except Exception as e:
-                ai_reply = "🤖 系統處理時發生未預期的錯誤，請稍後再試。"
+                ai_reply = f"🤖 系統發生未預期錯誤：{str(e)}"
 
             line_bot_api.reply_message(
                 ReplyMessageRequest(
