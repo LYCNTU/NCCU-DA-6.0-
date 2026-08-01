@@ -11,8 +11,9 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, GroupSource
 from supabase import create_client, Client
-from google import genai
 
+from google import genai
+from google.genai.errors import APIError
 app = FastAPI()
 
 # 從環境變數讀取金鑰
@@ -167,14 +168,19 @@ def handle_text_message(event):
             {question}
             """
 
-            try:
+        try:
                 ai_response = ai_client.models.generate_content(
                     model='gemini-2.0-flash',
                     contents=prompt,
                 )
                 ai_reply = ai_response.text.strip()
+            except APIError as e:
+                if e.code == 429:
+                    ai_reply = "☕ 目前請求較頻繁，AI 正在休息中！請稍微等待 1 分鐘後再試一次喔。"
+                else:
+                    ai_reply = f"🤖 AI 服務連線異常 (HTTP {e.code})，請稍後再試。"
             except Exception as e:
-                ai_reply = f"🤖 AI 處理時發生錯誤：{str(e)}"
+                ai_reply = "🤖 系統處理時發生未預期的錯誤，請稍後再試。"
 
             line_bot_api.reply_message(
                 ReplyMessageRequest(
