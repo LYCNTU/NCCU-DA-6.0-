@@ -182,7 +182,7 @@ def handle_text_message(event):
 
             try:
                 ai_response = ai_client.models.generate_content(
-                    model='gemini-2.0-flash',
+                    model='gemini-3.5-flash',
                     contents=prompt,
                 )
                 ai_reply = ai_response.text.strip()
