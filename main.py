@@ -36,7 +36,7 @@ def read_root():
 
 @app.post("/callback")
 async def callback(request: Request, x_line_signature: str = Header(None), x_line_retry_key: str = Header(None)):
-    # 💡 關鍵修正：如果是 LINE 的自動重試請求，直接忽略不處理，避免重複打爆 Gemini API
+    # 💡 忽略 LINE 自動重試請求，避免重複觸發 API 限流
     if x_line_retry_key:
         return "OK"
 
@@ -64,24 +64,27 @@ def handle_text_message(event):
         line_bot_api = MessagingApi(api_client)
 
         # ---------------------------------------------------------
-        # 1. 先取得發言者暱稱，並將當前訊息存入 Supabase
+        # 1. 條件過濾：只儲存「有標記人 (@)」或「下指令 (!)」的重點訊息
         # ---------------------------------------------------------
-        user_name = "成員"
-        try:
-            profile = line_bot_api.get_group_member_profile(group_id, user_id)
-            user_name = profile.display_name
-        except Exception:
-            pass
+        should_save = ("@" in msg_text) or msg_text.startswith("!")
 
-        supabase.table("group_messages").insert({
-            "group_id": group_id,
-            "user_id": user_id,
-            "user_name": user_name,
-            "message_text": msg_text
-        }).execute()
+        if should_save:
+            user_name = "成員"
+            try:
+                profile = line_bot_api.get_group_member_profile(group_id, user_id)
+                user_name = profile.display_name
+            except Exception:
+                pass
+
+            supabase.table("group_messages").insert({
+                "group_id": group_id,
+                "user_id": user_id,
+                "user_name": user_name,
+                "message_text": msg_text
+            }).execute()
 
         # ---------------------------------------------------------
-        # 2. 功能：關鍵字搜尋 (!search 關鍵字)
+        # 2. 功能：跨群組關鍵字搜尋 (!search 關鍵字)
         # ---------------------------------------------------------
         if msg_text.startswith("!search"):
             keyword = msg_text.replace("!search", "").strip()
@@ -96,7 +99,6 @@ def handle_text_message(event):
 
             response = supabase.table("group_messages") \
                 .select("user_name, message_text, created_at") \
-                .eq("group_id", group_id) \
                 .ilike("message_text", f"%{keyword}%") \
                 .order("created_at", desc=True) \
                 .limit(5) \
@@ -104,9 +106,9 @@ def handle_text_message(event):
 
             rows = response.data
             if not rows:
-                reply_str = f"🔍 找不到與「{keyword}」相關的訊息紀錄。"
+                reply_str = f"🔍 找不到與「{keyword}」相關的重點紀錄。"
             else:
-                reply_str = f"🔍 找到以下與「{keyword}」相關的最近訊息：\n"
+                reply_str = f"🔍 找到以下與「{keyword}」相關的最近重點訊息：\n"
                 for row in reversed(rows):
                     name = row.get("user_name") or "成員"
                     text = row.get("message_text")
@@ -121,7 +123,7 @@ def handle_text_message(event):
             return
 
         # ---------------------------------------------------------
-        # 3. 功能：AI 語意問答與自動整理 (!ask 或訊息包含指令)
+        # 3. 功能：AI 語意問答與自動整理 (!ask 或 !問)
         # ---------------------------------------------------------
         if msg_text.startswith("!ask") or "!問" in msg_text:
             if not ai_client:
@@ -136,14 +138,13 @@ def handle_text_message(event):
             # 清理問題字樣
             question = msg_text.replace("!ask", "").replace("!問", "").strip()
             if not question:
-                question = "請幫忙整理群組最近討論的重點。"
+                question = "請幫忙整理最近討論的重點事項。"
 
-            # 從 Supabase 抓取群組最近 50 筆對話紀錄
+            # 💡 從 Supabase 抓取「所有群組」最近 150 筆重點對話紀錄
             history_response = supabase.table("group_messages") \
                 .select("user_name, message_text, created_at") \
-                .eq("group_id", group_id) \
                 .order("created_at", desc=True) \
-                .limit(50) \
+                .limit(150) \
                 .execute()
 
             history_rows = history_response.data or []
@@ -157,14 +158,14 @@ def handle_text_message(event):
             ])
 
             prompt = f"""
-            你是一個群組助理。請根據以下提供群組近期的歷史聊天紀錄，簡短重點回答使用者的問題。
+            你是一個跨群組助理。請根據以下提供跨群組近期的重點歷史紀錄，簡短重點回答使用者的問題。
 
             【規則】：
-            1. 若紀錄中有相關資訊（例如：連結、地點、特定時間、檔案位置），請直接整理出結果。
+            1. 若紀錄中有相關資訊（例如：連結、地點、特定時間、檔案位置、負責人），請直接整理出結果。
             2. 若紀錄中完全找不到相關資訊，請明確且有禮貌地說明「歷史紀錄中目前沒有提到相關資訊」。
             3. 請保持回答簡潔，條列式說明。
 
-            【歷史聊天紀錄】：
+            【歷史重點紀錄】：
             {formatted_history}
 
             【使用者的提問】：
