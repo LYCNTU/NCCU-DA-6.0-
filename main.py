@@ -11,9 +11,9 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, GroupSource
 from supabase import create_client, Client
-
 from google import genai
 from google.genai.errors import APIError
+
 app = FastAPI()
 
 # 從環境變數讀取金鑰
@@ -119,7 +119,6 @@ def handle_text_message(event):
         # ---------------------------------------------------------
         # 3. 功能：AI 語意問答與自動整理 (!ask 或訊息包含指令)
         # ---------------------------------------------------------
-        # 判斷是否要觸發 AI 整理 (支援 !ask 指令或是訊息中包含 "@bot" 關鍵字)
         if msg_text.startswith("!ask") or "!問" in msg_text:
             if not ai_client:
                 line_bot_api.reply_message(
@@ -168,7 +167,7 @@ def handle_text_message(event):
             {question}
             """
 
-        try:
+            try:
                 ai_response = ai_client.models.generate_content(
                     model='gemini-2.0-flash',
                     contents=prompt,
