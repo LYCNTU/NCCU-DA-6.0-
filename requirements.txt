@@ -1,6 +1,5 @@
 fastapi
 uvicorn
 line-bot-sdk==3.25.0
-supabase==2.3.0
-httpx==0.24.1
+supabase>=2.10.0
 python-dotenv
