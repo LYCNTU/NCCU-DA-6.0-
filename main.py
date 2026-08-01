@@ -174,15 +174,17 @@ def handle_text_message(event):
 
             try:
                 ai_response = ai_client.models.generate_content(
-                    model='gemini-1.5-flash',
+                    model='gemini-2.5-flash',
                     contents=prompt,
                 )
                 ai_reply = ai_response.text.strip()
             except APIError as e:
-                # 顯式回傳具體 API 錯誤訊息，協助除錯
-                ai_reply = f"🤖 Gemini API 發生錯誤 (HTTP {e.code})：{e.message}"
+                if e.code == 429:
+                    ai_reply = "☕ 目前請求較頻繁，AI 正在休息中！請稍微等待 1 分鐘後再試一次喔。"
+                else:
+                    ai_reply = f"🤖 Gemini API 發生錯誤 (HTTP {e.code}): {e.message}"
             except Exception as e:
-                ai_reply = f"🤖 系統發生未預期錯誤：{str(e)}"
+                ai_reply = f"🤖 系統處理時發生未預期的錯誤：{str(e)}"
 
             line_bot_api.reply_message(
                 ReplyMessageRequest(
