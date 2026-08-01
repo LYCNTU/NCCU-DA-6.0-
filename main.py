@@ -30,15 +30,23 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # 顯式代入 API Key 初始化 Gemini SDK Client
 ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
+# 記憶體快取：用來記錄最近處理過的 LINE Retry Key，防止重複觸發
+processed_retry_keys = set()
+
 @app.get("/")
 def read_root():
     return {"status": "LINE Bot is running!"}
 
 @app.post("/callback")
 async def callback(request: Request, x_line_signature: str = Header(None), x_line_retry_key: str = Header(None)):
-    # 💡 忽略 LINE 自動重試請求，避免重複觸發處理
+    # 💡 嚴格過濾 LINE 自動重試請求：如果帶有 retry_key 且重複出現，直接回傳 OK 攔截
     if x_line_retry_key:
-        return "OK"
+        if x_line_retry_key in processed_retry_keys:
+            return "OK"
+        processed_retry_keys.add(x_line_retry_key)
+        # 控制快取大小，避免記憶體過大
+        if len(processed_retry_keys) > 200:
+            processed_retry_keys.popitem() if hasattr(processed_retry_keys, 'popitem') else processed_retry_keys.pop()
 
     body = await request.body()
     body_str = body.decode('utf-8')
@@ -140,7 +148,7 @@ def handle_text_message(event):
             if not question:
                 question = "請幫忙整理最近討論的重點事項。"
 
-            # 💡 從 Supabase 抓取「所有群組」最近 150 筆重點對話紀錄
+            # 💡 維持從 Supabase 抓取 150 筆重點對話紀錄
             history_response = supabase.table("group_messages") \
                 .select("user_name, message_text, created_at") \
                 .order("created_at", desc=True) \
@@ -174,7 +182,7 @@ def handle_text_message(event):
 
             try:
                 ai_response = ai_client.models.generate_content(
-                    model='gemini-2.5-flash-lite',
+                    model='gemini-2.0-flash',
                     contents=prompt,
                 )
                 ai_reply = ai_response.text.strip()
